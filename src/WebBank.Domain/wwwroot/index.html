@@ -1,0 +1,294 @@
+﻿<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>WebBank - Gestione Completa</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            padding: 20px;
+        }
+
+        .card {
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            border: none;
+            margin-bottom: 20px;
+        }
+
+        .balance-positive {
+            color: green;
+            font-weight: bold;
+        }
+
+        .balance-negative {
+            color: red;
+            font-weight: bold;
+        }
+
+        .btn-action {
+            margin-right: 5px;
+            margin-bottom: 5px;
+            font-size: 0.8rem;
+        }
+        /* Stile per la sezione login */
+        #authContainer {
+            max-width: 400px;
+            margin: 100px auto;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="authContainer">
+        <div class="card p-4">
+            <h2 class="text-center mb-4">🔑 WebBank Access</h2>
+            <div class="mb-3">
+                <label class="form-label">Username</label>
+                <input type="text" id="username" class="form-control">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Password</label>
+                <input type="password" id="password" class="form-control">
+            </div>
+            <button class="btn btn-primary w-100 mb-2" onclick="login()">Accedi</button>
+            <button class="btn btn-outline-secondary w-100" onclick="register()">Registrati</button>
+        </div>
+    </div>
+
+    <div class="container" id="mainDashboard" style="display: none;">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>🏦 WebBank Pro Interface</h1>
+            <button class="btn btn-danger btn-sm" onclick="logout()">Logout (Esci)</button>
+        </div>
+
+        <div class="card p-3">
+            <h3>📊 Analisi Globale (Classe Bank)</h3>
+            <div class="d-flex gap-2">
+                <button class="btn btn-info text-white" onclick="getBigger()">🏆 GetBiggerHolder()</button>
+                <button class="btn btn-warning text-dark" onclick="getMaxPlus()">⚡ FindMaxPlus()</button>
+                <button class="btn btn-success" onclick="creaConto()">➕ CreateAccountPlus()</button>
+            </div>
+            <div id="statsOutput" class="alert alert-secondary mt-3" style="display:none;"></div>
+        </div>
+
+        <div class="card p-3">
+            <h3>💰 I Miei Conti</h3>
+            <button class="btn btn-primary mb-3" onclick="caricaConti()">🔄 Aggiorna Lista</button>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Titolare</th>
+                            <th>Saldo (Balance)</th>
+                            <th>Stato (Status)</th>
+                            <th>Azioni (Metodi Classe)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabellaConti"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="historyModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">📜 Storico Operazioni</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="historyBody"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const API_BANK = '/api/bank';
+        const API_AUTH = '/api/auth';
+
+        // Stato dell'utente loggato
+        let loggedUser = null;
+
+        // --- FUNZIONI DI AUTENTICAZIONE ---
+
+        async function login() {
+            const user = document.getElementById('username').value;
+            const pass = document.getElementById('password').value;
+
+            const res = await fetch(`${API_AUTH}/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: user, password: pass })
+            });
+
+            if (res.ok) {
+                loggedUser = await res.json();
+                mostraDashboard();
+            } else {
+                alert("Credenziali errate!");
+            }
+        }
+
+        async function register() {
+            const user = document.getElementById('username').value;
+            const pass = document.getElementById('password').value;
+
+            const res = await fetch(`${API_AUTH}/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: user, password: pass })
+            });
+
+            if (res.ok) {
+                alert("Registrazione effettuata! Ora puoi accedere.");
+            } else {
+                alert("Errore nella registrazione (forse l'utente esiste già).");
+            }
+        }
+
+        function mostraDashboard() {
+            document.getElementById('authContainer').style.display = 'none';
+            document.getElementById('mainDashboard').style.display = 'block';
+            caricaConti();
+        }
+
+        function logout() {
+            loggedUser = null;
+            document.getElementById('authContainer').style.display = 'block';
+            document.getElementById('mainDashboard').style.display = 'none';
+        }
+
+        // --- FUNZIONI BANCA ---
+
+        async function caricaConti() {
+            const res = await fetch(`${API_BANK}/accounts`);
+            const conti = await res.json();
+
+            // Filtra solo i conti dell'utente loggato (filtro lato client per ora)
+            // Se nel backend hai già il filtro, puoi rimuovere .filter qui sotto
+            const mieiConti = conti.filter(c => c.name === loggedUser.username);
+
+            const tbody = document.getElementById('tabellaConti');
+            tbody.innerHTML = '';
+
+            // Usiamo 'mieiConti' se vuoi filtrare, oppure 'conti' se il backend filtra già
+            mieiConti.forEach(c => {
+                const colorClass = c.balance >= 0 ? 'balance-positive' : 'balance-negative';
+                let statusLabel = "Empty";
+                if (c.currentStatus === 1) statusLabel = "Positive";
+                if (c.currentStatus === 2) statusLabel = "Negative";
+
+                const riga = `
+                        <tr>
+                            <td>
+                                <strong>${c.name}</strong><br>
+                                <small class="text-muted" style="font-size: 0.7rem;">${c.id}</small>
+                            </td>
+                            <td class="${colorClass} fs-5">${c.balance.toFixed(2)} €</td>
+                            <td><span class="badge bg-secondary">${statusLabel}</span></td>
+                            <td>
+                                <div class="input-group input-group-sm" style="max-width: 300px;">
+                                    <span class="input-group-text">€</span>
+                                    <input type="number" id="importo-${c.id}" class="form-control" placeholder="0">
+                                    <button class="btn btn-success" onclick="eseguiAzione('${c.id}', 'versa')">Versa</button>
+                                    <button class="btn btn-danger" onclick="eseguiAzione('${c.id}', 'preleva')">Preleva</button>
+                                </div>
+                                <div class="mt-1">
+                                    <button class="btn btn-sm btn-warning" onclick="interessi('${c.id}')">Interessi</button>
+                                    <button class="btn btn-sm btn-info" onclick="vediStorico('${c.id}')">Storico</button>
+                                </div>
+                            </td>
+                        </tr>`;
+                tbody.innerHTML += riga;
+            });
+        }
+
+        async function eseguiAzione(id, tipo) {
+            const input = document.getElementById(`importo-${id}`);
+            let valore = parseFloat(input.value);
+
+            if (!valore || valore <= 0) {
+                alert("Inserisci un importo valido (maggiore di 0)!");
+                return;
+            }
+
+            if (tipo === 'preleva') {
+                valore = -valore;
+            }
+
+            await operazione(id, valore);
+            input.value = '';
+        }
+
+        async function creaConto() {
+            const res = await fetch(`${API_BANK}/create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: loggedUser.id })
+            });
+            if (res.ok) caricaConti();
+        }
+
+        async function getBigger() {
+            const res = await fetch(`${API_BANK}/stats/bigger`);
+            const data = await res.json();
+            mostraOutput(`Il cliente con più conti è: <strong>${data.result}</strong>`);
+        }
+
+        async function getMaxPlus() {
+            const res = await fetch(`${API_BANK}/stats/max-plus`);
+            const data = await res.json();
+            mostraOutput(`Il conto con più attività è di: <strong>${data.result}</strong>`);
+        }
+
+        async function operazione(id, amount) {
+            const res = await fetch(`${API_BANK}/operation`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: id, amount: amount })
+            });
+            if (res.ok) {
+                caricaConti();
+            } else {
+                const err = await res.json();
+                alert("Errore: " + JSON.stringify(err));
+            }
+        }
+
+        async function interessi(id) {
+            const res = await fetch(`${API_BANK}/interests`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(id)
+            });
+            const data = await res.json();
+            alert(data.message);
+            caricaConti();
+        }
+
+        async function vediStorico(id) {
+            const res = await fetch(`${API_BANK}/${id}/history`);
+            const ops = await res.json();
+            let html = '<ul class="list-group">';
+            ops.forEach(op => {
+                html += `<li class="list-group-item">
+                        <strong>${op.operationType}</strong>: ${op.amount}€
+                        <br><small>${new Date(op.date).toLocaleString()}</small>
+                    </li>`;
+            });
+            html += '</ul>';
+            document.getElementById('historyBody').innerHTML = html;
+            new bootstrap.Modal(document.getElementById('historyModal')).show();
+        }
+
+        function mostraOutput(msg) {
+            const div = document.getElementById('statsOutput');
+            div.style.display = 'block';
+            div.innerHTML = msg;
+        }
+    </script>
+</body>
+</html>
